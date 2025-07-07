@@ -5,19 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.reactivespring.dto.CustomMessage;
 import com.reactivespring.dto.SurveyTranslationRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
 
 @Slf4j
-@Component
 public class SurveyTranslationMessageConverter {
     
-    private final ObjectMapper objectMapper;
+    private static final ObjectMapper objectMapper = new ObjectMapper();
     
-    public SurveyTranslationMessageConverter(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
-    }
-    
-    public CustomMessage convertToMessage(SurveyTranslationRequest request) {
+    public static CustomMessage convertToMessage(SurveyTranslationRequest request) {
         try {
             String systemPrompt = buildSystemPrompt(request);
             String userContent = buildUserContent(request);
@@ -30,7 +24,7 @@ public class SurveyTranslationMessageConverter {
         }
     }
     
-    private String buildSystemPrompt(SurveyTranslationRequest request) {
+    private static String buildSystemPrompt(SurveyTranslationRequest request) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are a professional translator specializing in survey localization. ");
         prompt.append("Your task is to translate all text content in the provided survey from ");
@@ -73,7 +67,7 @@ public class SurveyTranslationMessageConverter {
         return prompt.toString();
     }
     
-    private String buildUserContent(SurveyTranslationRequest request) throws JsonProcessingException {
+    private static String buildUserContent(SurveyTranslationRequest request) throws JsonProcessingException {
         return "Survey to translate:\n" + objectMapper.writeValueAsString(request.getSurvey());
     }
 }
