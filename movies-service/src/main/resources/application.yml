@@ -1,5 +1,45 @@
 spring:
   profiles:
     active: local
+  application:
+    name: survey-translation-service
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017
+      database: surveydb
+  webflux:
+    base-path: /api
+
 server:
-  port: 8082
+  port: 8080
+
+# OpenAI Configuration
+openai:
+  api:
+    key: ${OPENAI_API_KEY:}  # Set this as environment variable
+  model:
+    name: gpt-3.5-turbo
+  timeout:
+    seconds: 120
+  max:
+    tokens: 4000
+  temperature: 0.3
+
+# Logging Configuration
+logging:
+  level:
+    com.reactivespring: INFO
+    dev.langchain4j: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Management and Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
