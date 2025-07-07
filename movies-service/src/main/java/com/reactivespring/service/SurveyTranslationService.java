@@ -6,7 +6,13 @@ import com.reactivespring.domain.Survey;
 import com.reactivespring.dto.CustomMessage;
 import com.reactivespring.dto.SurveyTranslationRequest;
 import com.reactivespring.dto.SurveyTranslationResponse;
+import com.reactivespring.util.ResponseFormatUtil;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatLanguageModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -15,6 +21,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -24,15 +31,18 @@ public class SurveyTranslationService {
     private final ChatLanguageModel chatLanguageModel;
     private final SurveyTranslationMessageConverter messageConverter;
     private final ObjectMapper objectMapper;
+    private final ResponseFormatUtil responseFormatUtil;
     
     @Autowired
     public SurveyTranslationService(
             ChatLanguageModel chatLanguageModel,
             SurveyTranslationMessageConverter messageConverter,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            ResponseFormatUtil responseFormatUtil) {
         this.chatLanguageModel = chatLanguageModel;
         this.messageConverter = messageConverter;
         this.objectMapper = objectMapper;
+        this.responseFormatUtil = responseFormatUtil;
     }
     
     public Mono<SurveyTranslationResponse> translateSurvey(SurveyTranslationRequest request) {
@@ -51,23 +61,34 @@ public class SurveyTranslationService {
             // Convert request to CustomMessage
             CustomMessage message = messageConverter.convertToMessage(request);
             
-            // Call OpenAI via LangChain4j
-            String response = chatLanguageModel.generate(message.text());
+            // Create ResponseFormat for structured output
+            ResponseFormat responseFormat = responseFormatUtil.createSurveyTranslationResponseFormat();
             
-            // Parse the response back to Survey object
-            Survey translatedSurvey = parseTranslatedSurvey(response, request);
+            // Create ChatRequest with structured response format
+            ChatRequest chatRequest = ChatRequest.builder()
+                    .messages(List.of(UserMessage.from(message.text())))
+                    .responseFormat(responseFormat)
+                    .build();
             
-            // Build metadata
+            // Call OpenAI via LangChain4j with structured output
+            log.info("Calling AI model with structured response format");
+            ChatResponse chatResponse = chatLanguageModel.chat(chatRequest);
+            String aiResponseContent = chatResponse.aiMessage().text();
+            
+            log.debug("AI response received: {}", aiResponseContent);
+            
+            // Parse the structured response directly to SurveyTranslationResponse
+            SurveyTranslationResponse translationResponse = parseStructuredResponse(aiResponseContent, request);
+            
+            // Update metadata with actual processing time
             SurveyTranslationResponse.TranslationMetadata metadata = buildMetadata(
                     request, startTime, System.currentTimeMillis(), true
             );
             
-            return SurveyTranslationResponse.builder()
-                    .translatedSurvey(translatedSurvey)
-                    .sourceLanguage(request.getSourceLanguage())
-                    .targetLanguage(request.getTargetLanguage())
-                    .metadata(metadata)
-                    .build();
+            // Override metadata in the response
+            translationResponse.setMetadata(metadata);
+            
+            return translationResponse;
                     
         } catch (Exception e) {
             log.error("Error during translation", e);
@@ -81,8 +102,45 @@ public class SurveyTranslationService {
         }
     }
     
-    private Survey parseTranslatedSurvey(String response, SurveyTranslationRequest request) {
+    /**
+     * Parses the structured AI response into SurveyTranslationResponse
+     * The AI should return a complete SurveyTranslationResponse object based on the ResponseFormat schema
+     */
+    private SurveyTranslationResponse parseStructuredResponse(String response, SurveyTranslationRequest request) {
         try {
+            // Clean the response to extract JSON
+            String cleanedResponse = extractJsonFromResponse(response);
+            
+            // Parse the JSON to SurveyTranslationResponse object
+            SurveyTranslationResponse translationResponse = objectMapper.readValue(cleanedResponse, SurveyTranslationResponse.class);
+            
+            // Ensure the translated survey has the correct metadata
+            if (translationResponse.getTranslatedSurvey() != null) {
+                translationResponse.getTranslatedSurvey().setLanguage(request.getTargetLanguage());
+                translationResponse.getTranslatedSurvey().setUpdatedAt(LocalDateTime.now());
+            }
+            
+            // Ensure source and target languages are set correctly
+            translationResponse.setSourceLanguage(request.getSourceLanguage());
+            translationResponse.setTargetLanguage(request.getTargetLanguage());
+            
+            return translationResponse;
+            
+        } catch (Exception e) {
+            log.error("Failed to parse structured translation response", e);
+            // Fallback: try to parse just the survey if the full response parsing fails
+            return parseAsLegacyResponse(response, request);
+        }
+    }
+
+    /**
+     * Fallback method to parse response in the old format (just Survey object)
+     * This maintains backward compatibility
+     */
+    private SurveyTranslationResponse parseAsLegacyResponse(String response, SurveyTranslationRequest request) {
+        try {
+            log.warn("Falling back to legacy response parsing");
+            
             // Clean the response to extract JSON
             String cleanedResponse = extractJsonFromResponse(response);
             
@@ -93,11 +151,16 @@ public class SurveyTranslationService {
             translatedSurvey.setLanguage(request.getTargetLanguage());
             translatedSurvey.setUpdatedAt(LocalDateTime.now());
             
-            return translatedSurvey;
+            // Create SurveyTranslationResponse manually
+            return SurveyTranslationResponse.builder()
+                    .translatedSurvey(translatedSurvey)
+                    .sourceLanguage(request.getSourceLanguage())
+                    .targetLanguage(request.getTargetLanguage())
+                    .build();
             
         } catch (Exception e) {
-            log.error("Failed to parse translated survey", e);
-            throw new RuntimeException("Failed to parse translated survey: " + e.getMessage(), e);
+            log.error("Failed to parse response even with legacy format", e);
+            throw new RuntimeException("Failed to parse AI response: " + e.getMessage(), e);
         }
     }
     

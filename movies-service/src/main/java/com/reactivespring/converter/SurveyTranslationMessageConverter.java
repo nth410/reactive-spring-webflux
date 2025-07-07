@@ -62,7 +62,33 @@ public class SurveyTranslationMessageConverter {
         prompt.append("- Timestamps or metadata\n");
         prompt.append("- Choice values that are technical codes\n");
         
-        prompt.append("\nReturn ONLY the translated JSON object with the same structure.");
+        prompt.append("\nOutput Format Requirements:\n");
+        prompt.append("You must return a complete SurveyTranslationResponse JSON object with the following structure:\n");
+        prompt.append("{\n");
+        prompt.append("  \"translatedSurvey\": { /* the translated survey object */ },\n");
+        prompt.append("  \"sourceLanguage\": \"").append(request.getSourceLanguage()).append("\",\n");
+        prompt.append("  \"targetLanguage\": \"").append(request.getTargetLanguage()).append("\",\n");
+        prompt.append("  \"metadata\": {\n");
+        prompt.append("    \"translatedAt\": \"").append(java.time.LocalDateTime.now().toString()).append("\",\n");
+        prompt.append("    \"translationModel\": \"AI Translation Assistant\",\n");
+        prompt.append("    \"totalTextBlocks\": /* count of translated text blocks */,\n");
+        prompt.append("    \"translatedBlocks\": /* count of successfully translated blocks */,\n");
+        prompt.append("    \"confidenceScore\": /* confidence between 0.0 and 1.0 */,\n");
+        prompt.append("    \"processingTimeMs\": 0,\n");
+        prompt.append("    \"isComplete\": true,\n");
+        prompt.append("    \"translationNotes\": {\n");
+        prompt.append("      \"model\": \"AI Translation Assistant\"");
+        if (request.getOptions() != null && request.getOptions().getTone() != null) {
+            prompt.append(",\n      \"tone\": \"").append(request.getOptions().getTone()).append("\"");
+        }
+        if (request.getOptions() != null && request.getOptions().getContext() != null) {
+            prompt.append(",\n      \"context\": \"").append(request.getOptions().getContext()).append("\"");
+        }
+        prompt.append("\n    }\n");
+        prompt.append("  }\n");
+        prompt.append("}\n");
+        
+        prompt.append("\nThe response will be validated against a strict JSON schema, so ensure the structure is exactly correct.");
         
         return prompt.toString();
     }
